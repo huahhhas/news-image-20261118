@@ -11,11 +11,30 @@ Outside the grader's container, MAKEFUN_OUTPUT_DIR stands in for /output:
     mkdir -p out && MAKEFUN_OUTPUT_DIR=out python3 main.py
 """
 
+import hashlib
 import os
 import shutil
+import struct
+import sys
 from pathlib import Path
 
 src = Path(__file__).resolve().parent / "entry.png"
+if not src.is_file():
+    sys.exit(f"error: entry image missing: {src}")
 dst_dir = Path(os.environ.get("MAKEFUN_OUTPUT_DIR", "/output"))
 dst_dir.mkdir(parents=True, exist_ok=True)
-shutil.copyfile(src, dst_dir / "entry.png")
+dst = dst_dir / "entry.png"
+shutil.copyfile(src, dst)
+
+# Verify what was written: it must be the same 1024x1024 PNG we shipped.
+data = dst.read_bytes()
+if data[:8] != b"\x89PNG\r\n\x1a\n" or len(data) < 33:
+    sys.exit(f"error: {dst} is not a valid PNG")
+width, height = struct.unpack(">II", data[16:24])
+if (width, height) != (1024, 1024):
+    sys.exit(f"error: {dst} is {width}x{height}, expected 1024x1024")
+src_hash = hashlib.sha256(src.read_bytes()).hexdigest()
+dst_hash = hashlib.sha256(data).hexdigest()
+if src_hash != dst_hash:
+    sys.exit(f"error: {dst} differs from {src} (sha256 mismatch)")
+print(f"wrote {dst}: {len(data)} bytes, 1024x1024 PNG, sha256 {dst_hash}")
